@@ -1,0 +1,166 @@
+Verify Rows Needing Migration:
+This query identifies rows where:
+
+-->case_party_details contains a party_name.
+-->case_party_fc_profile is either NULL, missing party_name, or has a mismatched value.
+
+SELECT
+    case_id,
+    case_party_details->>'party_name' AS source_party_name,
+    case_party_fc_profile->>'party_name' AS target_party_name
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND (
+      case_party_fc_profile IS NULL
+      OR case_party_fc_profile->>'party_name' IS NULL
+      OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+  );
+
+
+Get the total number of rows where party_name needs to be migrated or updated.
+SELECT COUNT(*)
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND (
+      case_party_fc_profile IS NULL
+      OR case_party_fc_profile->>'party_name' IS NULL
+      OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+  );
+
+
+
+
+
+To ensure data migration even if case_party_fc_profile has other keys but the 
+party_name key is NULL or missing, you can adjust the query and migration logic.
+This logic ensures that only the party_name key is updated, preserving other keys in the case_party_fc_profile JSONB column.
+
+DO $$
+DECLARE
+    batch_size INTEGER := 10000; -- Adjust based on your system's performance
+BEGIN
+    LOOP
+        -- Update a batch of rows
+        UPDATE fcem_data.fc_case_party_relationship
+        SET case_party_fc_profile = jsonb_set(
+            COALESCE(case_party_fc_profile, '{}'), -- Initialize JSONB if NULL
+            '{party_name}',                        -- Path for the `party_name` key
+            case_party_details->'party_name',      -- Value from `case_party_details`
+            true                                   -- Overwrite existing value
+        )
+        WHERE ctid IN (
+            SELECT ctid
+            FROM fcem_data.fc_case_party_relationship
+            WHERE case_party_details ? 'party_name' -- Ensure `party_name` exists in `case_party_details`
+              AND (
+                  case_party_fc_profile IS NULL                     -- JSONB column is NULL
+                  OR case_party_fc_profile->>'party_name' IS NULL   -- `party_name` is NULL
+                  OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name' -- Mismatched
+              )
+            LIMIT batch_size
+        );
+
+        -- Exit the loop when no rows are left to update
+        EXIT WHEN NOT EXISTS (
+            SELECT 1
+            FROM fcem_data.fc_case_party_relationship
+            WHERE case_party_details ? 'party_name'
+              AND (
+                  case_party_fc_profile IS NULL
+                  OR case_party_fc_profile->>'party_name' IS NULL
+                  OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+              )
+        );
+    END LOOP;
+END $$;
+
+Verification Query to verify which rows still need migration:
+Run the following:
+SELECT COUNT(*)
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name' -- Ensure `party_name` exists in `case_party_details`
+  AND (
+      case_party_fc_profile IS NULL
+      OR case_party_fc_profile->>'party_name' IS NULL
+      OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+  );
+
+
+
+Verify Migrated Records
+Check rows where the party_name has been successfully migrated and matches between case_party_details and case_party_fc_profile.
+
+SELECT
+    case_id,
+    case_party_details->>'party_name' AS source_party_name,
+    case_party_fc_profile->>'party_name' AS target_party_name
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND case_party_fc_profile->>'party_name' = case_party_details->>'party_name';
+
+Count Migrated Records
+After the migration is complete, verify the total migrated records:
+Count the total number of successfully migrated rows where party_name matches between case_party_details and case_party_fc_profile.
+
+SELECT COUNT(*)
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND case_party_fc_profile->>'party_name' = case_party_details->>'party_name';
+
+Compare Pre-Migration and Post-Migration Status
+Get a summary to compare the status of migrated and pending records.
+
+SELECT
+    COUNT(*) AS total_records,
+    COUNT(CASE 
+            WHEN case_party_details ? 'party_name'
+              AND case_party_fc_profile->>'party_name' = case_party_details->>'party_name' THEN 1
+         END) AS migrated_records,
+    COUNT(CASE 
+            WHEN case_party_details ? 'party_name'
+              AND (
+                  case_party_fc_profile IS NULL
+                  OR case_party_fc_profile->>'party_name' IS NULL
+                  OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+              ) THEN 1
+         END) AS pending_records
+FROM fcem_data.fc_case_party_relationship;
+
+
+Verify Other Keys Are Preserved
+Check a few rows to ensure that other keys in case_party_fc_profile are preserved while updating party_name.
+
+SELECT
+    case_id,
+    case_party_fc_profile AS original_json,
+    jsonb_set(
+        COALESCE(case_party_fc_profile, '{}'),
+        '{party_name}',
+        case_party_details->'party_name',
+        true
+    ) AS updated_json
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND (
+      case_party_fc_profile IS NULL
+      OR case_party_fc_profile->>'party_name' IS NULL
+      OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+  )
+LIMIT 100;
+
+Validate Pending Records After Migration
+
+After running the migration, verify that no rows remain pending.
+
+SELECT COUNT(*)
+FROM fcem_data.fc_case_party_relationship
+WHERE case_party_details ? 'party_name'
+  AND (
+      case_party_fc_profile IS NULL
+      OR case_party_fc_profile->>'party_name' IS NULL
+      OR case_party_fc_profile->>'party_name' IS DISTINCT FROM case_party_details->>'party_name'
+  );
+
+
+
+
