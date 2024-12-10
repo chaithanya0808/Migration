@@ -1,0 +1,14 @@
+-- Step 1: Create a backup table with the same structure and data
+CREATE TABLE IF NOT EXISTS fcem_data.fc_case_party_relationship_backup
+AS
+SELECT *
+FROM fcem_data.fc_case_party_relationship;
+
+-- Step 2: Verify the backup
+SELECT COUNT(*) AS backup_record_count
+FROM fcem_data.fc_case_party_relationship_backup;
+
+-- Optional: View a sample of the backed-up data
+SELECT *
+FROM fcem_data.fc_case_party_relationship_backup
+LIMIT 10;
