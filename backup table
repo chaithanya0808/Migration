@@ -12,3 +12,12 @@ FROM fcem_data.fc_case_party_relationship_backup;
 SELECT *
 FROM fcem_data.fc_case_party_relationship_backup
 LIMIT 10;
+
+Validate by comparing row counts:
+
+SELECT COUNT(*) AS original_count
+FROM fcem_data.fc_case_party_relationship;
+
+SELECT COUNT(*) AS backup_count
+FROM fcem_data.fc_case_party_relationship_backup;
+
