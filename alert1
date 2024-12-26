@@ -1,0 +1,16 @@
+from pyspark.sql import functions as F
+
+# Extract transactionId list and count per Kafka message
+df_statistics = df_to_ser.select(
+    F.col("key.id").alias("kafka_message_id"),
+    F.expr("value.fcAlertedTransaction").alias("fc_alerted_transaction")
+).withColumn(
+    "transactions", F.expr("transform(fc_alerted_transaction, x -> x.transactionId)")
+).withColumn(
+    "txn_count", F.size(F.col("transactions"))
+).select(
+    "kafka_message_id", "transactions", "txn_count"
+)
+
+# Display the result
+df_statistics.show(truncate=False)
