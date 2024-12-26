@@ -1,0 +1,19 @@
+from pyspark.sql import functions as F
+
+# Explode the array and extract transactionId
+df_exploded = df_to_ser.select(
+    F.col("key.id").alias("kafka_message_id"),
+    F.explode("value.fcAlertedTransaction").alias("fc_alerted_transaction")
+).select(
+    F.col("kafka_message_id"),
+    F.col("fc_alerted_transaction.transactionId").alias("transactionId")
+)
+
+# Aggregate transactionIds into a list and count
+df_statistics = df_exploded.groupBy("kafka_message_id").agg(
+    F.collect_list("transactionId").alias("transactions"),
+    F.count("transactionId").alias("txn_count")
+)
+
+# Display the result
+df_statistics.show(truncate=False)
