@@ -1,0 +1,26 @@
+%%sql
+
+INSERT INTO delta.`s3://ndcdev-lz198-exp-fcdptm/data/fcem/dev/audit/dag_execution_information`
+SELECT 
+    pi.job_id,
+    pi.object,
+    pi.batch_scn,
+    pi.batch_end_scn,
+    je.start_time,
+    je.end_time,
+    pi.batch_status
+FROM delta.`s3://ndcdev-lz198-exp-fcdptm/data/fcem/dev/audit/job_execution` je
+JOIN delta.`s3://ndcdev-lz198-exp-fcdptm/data/fcem/dev/audit/processing_information` pi
+    ON je.job_id = pi.job_id AND je.object = pi.object;
+
+INSERT INTO: Adds new rows into the dag_execution_information table.
+SELECT: Gathers the required data from job_execution (je) and processing_information (pi) tables using a JOIN.
+JOIN: Matches rows based on job_id and object.
+The data is now migrated into the empty table.
+
+ Validation After Migration:
+%%sql
+SELECT * FROM delta.`s3://ndcdev-lz198-exp-fcdptm/data/fcem/dev/audit/dag_execution_information` LIMIT 10;
+
+This approach efficiently migrates data from two source tables into your empty dag_execution_information table.
+If you specifically need to use an UPDATE, let me know and I’ll explain why it wouldn’t fit in this scenario.
