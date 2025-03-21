@@ -21,3 +21,4 @@ BEGIN
 
     RAISE NOTICE 'Deletion of matching party_name completed successfully.';
 END $$;
+
