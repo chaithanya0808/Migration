@@ -39,6 +39,67 @@ WHERE case_party_details ? 'party_name';
 
 ##Verify that party_name exists in case_party_fc_profile:
 
+
+
+--- addinitional code for delte script
+
+DO $$
+DECLARE
+    batch_size INTEGER := 10000;
+    v_batch_rows_updated INTEGER := 0;    -- Rows updated in each batch
+    v_total_rows_updated INTEGER := 0;    -- Accumulates total rows updated
+    v_start_time timestamp;
+    v_end_time timestamp;
+    v_time_taken interval;                -- Tracks total time taken
+BEGIN
+    -- Record start time with precise timestamp
+    v_start_time := clock_timestamp();
+    RAISE NOTICE 'Starting cleanup of party_name at %', v_start_time;
+
+    LOOP
+        -- Batch removal of 'party_name' key
+        UPDATE fcem_data.fc_case_party_relationship
+        SET case_party_details = case_party_details - 'party_name'
+        WHERE ctid IN (
+            SELECT ctid
+            FROM fcem_data.fc_case_party_relationship
+            WHERE case_party_details ? 'party_name'
+            LIMIT batch_size
+        );
+
+        -- Get the number of rows updated in the batch
+        GET DIAGNOSTICS v_batch_rows_updated = ROW_COUNT;
+
+        -- Accumulate the total rows updated
+        v_total_rows_updated := v_total_rows_updated + v_batch_rows_updated;
+
+        -- Exit the loop when no more rows are updated
+        EXIT WHEN v_batch_rows_updated = 0;
+
+        RAISE NOTICE '% rows cleaned in this batch.', v_batch_rows_updated;
+    END LOOP;
+
+    -- Record end time with precise timestamp
+    v_end_time := clock_timestamp();
+    
+    -- Calculate total time taken
+    v_time_taken := v_end_time - v_start_time;
+
+    -- Final summary
+    IF v_total_rows_updated = 0 THEN
+        RAISE NOTICE 'No rows were updated. Cleanup might be unnecessary.';
+    ELSE
+        RAISE NOTICE 'Successfully cleaned % rows from case_party_details.', v_total_rows_updated;
+    END IF;
+
+    RAISE NOTICE 'Cleanup completed at %. Total time taken: %', 
+        v_end_time, v_time_taken;
+
+    RAISE NOTICE 'Batch cleanup completed successfully.';
+
+END $$;
+
+
 SELECT COUNT(*) AS migrated_count
 FROM fcem_data.fc_case_party_relationship
 WHERE case_party_fc_profile ? 'party_name';
