@@ -240,3 +240,66 @@ BEGIN
 
 END $$;
 
+-----------------------------------
+
+
+DO $$
+DECLARE
+    batch_size INTEGER := 100000;
+    v_batch_rows_updated bigint := 0;  -- Tracks rows updated in each batch
+    v_total_rows_updated bigint := 0;  -- Accumulates total rows updated
+    v_start_time timestamp;
+    v_end_time timestamp;
+BEGIN
+    -- Record start time
+    v_start_time := CURRENT_TIMESTAMP;
+    RAISE NOTICE 'Starting FC_CASE_PARTY_RELATIONSHIP update at %', v_start_time;
+
+    LOOP
+        -- Update a batch of rows
+        UPDATE fcem_data.fc_case_party_relationship_backup_21mar
+        SET case_party_fc_profile = jsonb_set(
+            COALESCE(case_party_fc_profile, '{}'), -- Initialize JSONB if NULL
+            '{partyName}',                         -- Path for the `partyName` key
+            case_party_details->'partyName',       -- Value from `case_party_details`
+            true                                   -- Overwrite existing value
+        )
+        WHERE ctid IN (
+            SELECT ctid
+            FROM fcem_data.fc_case_party_relationship_backup_21mar
+            WHERE case_party_details ? 'partyName'  -- Ensure `partyName` exists in `case_party_details`
+              AND (
+                  case_party_fc_profile IS NULL
+                  OR NOT (case_party_fc_profile ? 'partyName') -- JSONB column missing `partyName`
+                  OR case_party_fc_profile->>'partyName' IS NULL -- `partyName` value is NULL
+              )
+            LIMIT batch_size
+        );
+
+        -- Get rows updated in the current batch
+        GET DIAGNOSTICS v_batch_rows_updated = ROW_COUNT;
+
+        -- Accumulate the total rows updated
+        v_total_rows_updated := v_total_rows_updated + v_batch_rows_updated;
+
+        -- Exit the loop if no more rows are updated
+        EXIT WHEN v_batch_rows_updated = 0;
+
+    END LOOP;
+
+    -- Record end time
+    v_end_time := CURRENT_TIMESTAMP;
+
+    -- Validation checks
+    IF v_total_rows_updated = 0 THEN
+        RAISE EXCEPTION 'No rows were updated in FC_CASE_PARTY_RELATIONSHIP table';
+    ELSE
+        RAISE NOTICE 'Successfully updated % rows in FC_CASE_PARTY_RELATIONSHIP table', v_total_rows_updated;
+    END IF;
+
+    RAISE NOTICE 'Update completed at %. Total time taken: %', 
+        v_end_time, age(v_end_time, v_start_time);
+
+    RAISE NOTICE 'Batch migration completed successfully.';
+
+END $$;
