@@ -165,3 +165,78 @@ BEGIN
 
 END $$;
 
+
+----------------------------
+
+DO $$
+DECLARE
+    batch_size INTEGER := 10000;              -- Batch size for updates
+    v_start_time TIMESTAMP;                   -- Execution start time
+    v_end_time TIMESTAMP;                     -- Execution end time
+    v_rows_updated INTEGER := 0;              -- Number of rows updated in each batch
+    v_total_updated INTEGER := 0;             -- Total rows updated
+BEGIN
+    -- Start time tracking
+    v_start_time := clock_timestamp();
+
+    -- Create a temporary table to hold batch rows
+    CREATE TEMP TABLE tmp_batch AS
+    SELECT ctid
+    FROM fcem_data.fc_case_party_relationship
+    WHERE case_party_details ? 'party_name'
+      AND (
+          case_party_fc_profile IS NULL
+          OR NOT (case_party_fc_profile ? 'party_name')
+          OR case_party_fc_profile->>'party_name' IS NULL
+      )
+    LIMIT batch_size;
+
+    -- Loop until no more rows are available
+    LOOP
+        -- Batch update using the pre-selected rows
+        UPDATE fcem_data.fc_case_party_relationship AS target
+        SET case_party_fc_profile = jsonb_set(
+            COALESCE(target.case_party_fc_profile, '{}'),
+            '{party_name}',
+            target.case_party_details->'party_name',
+            true
+        )
+        WHERE target.ctid IN (SELECT ctid FROM tmp_batch);
+
+        -- Get the number of rows updated
+        GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
+
+        -- Track the total rows updated
+        v_total_updated := v_total_updated + v_rows_updated;
+
+        -- Exit the loop when no rows are left
+        EXIT WHEN v_rows_updated = 0;
+
+        -- Refresh the batch with new rows
+        TRUNCATE tmp_batch;
+        INSERT INTO tmp_batch
+        SELECT ctid
+        FROM fcem_data.fc_case_party_relationship
+        WHERE case_party_details ? 'party_name'
+          AND (
+              case_party_fc_profile IS NULL
+              OR NOT (case_party_fc_profile ? 'party_name')
+              OR case_party_fc_profile->>'party_name' IS NULL
+          )
+        LIMIT batch_size;
+
+        RAISE NOTICE 'Rows updated in batch: %', v_rows_updated;
+    END LOOP;
+
+    -- End time tracking
+    v_end_time := clock_timestamp();
+
+    -- Drop the temporary table
+    DROP TABLE tmp_batch;
+
+    -- Display final result
+    RAISE NOTICE 'Total rows updated: %', v_total_updated;
+    RAISE NOTICE 'Total execution time: %', age(v_end_time, v_start_time);
+
+END $$;
+
